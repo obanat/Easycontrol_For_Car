@@ -7,6 +7,13 @@ import android.content.ClipData;
 import android.content.Context;
 import android.content.Intent;
 import android.hardware.usb.UsbDevice;
+import android.net.ConnectivityManager;
+import android.net.DhcpInfo;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.wifi.WifiManager;
+import android.util.Log;
+
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -320,7 +327,14 @@ public class DeviceListAdapter extends BaseExpandableListAdapter {
       UsbDevice usbDevice = linkDevices.get(device.uuid);
       if (usbDevice == null) return;
       new Client(device, usbDevice, mode);
-    } else new Client(device, null, mode);
+    } else {
+        String[] parts = device.address.split(":");
+        if (parts.length == 2 && "auto".equals(device.name) && isWifiConnected(AppData.main)) {
+          device.address = getDhcpServerAddress(AppData.main) + ":" + parts[1];
+        }
+        Log.i("TAGG", "startDevice:" + device.name + "-" + device.address);
+        new Client(device, null, mode);
+    }
   }
 
   // 启动默认设备
@@ -346,5 +360,44 @@ public class DeviceListAdapter extends BaseExpandableListAdapter {
       expandableListView.collapseGroup(i);
     queryDevices();
     notifyDataSetChanged();
+  }
+
+  private static boolean isWifiConnected(Context context) {
+
+    ConnectivityManager cm = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+    if (cm != null) {
+      Network activeNetwork = cm.getActiveNetwork();
+      if (activeNetwork != null) {
+        NetworkCapabilities capabilities = cm.getNetworkCapabilities(activeNetwork);
+        return capabilities != null && capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI);
+      }
+    }
+    return false;
+  }
+
+  /**
+   * 获取当前连接的Wi-Fi网络的DHCP服务器地址
+   * @param context 上下文
+   * @return DHCP服务器地址的字符串形式，如果无法获取则返回null
+   */
+  private static String getDhcpServerAddress(Context context) {
+    WifiManager wifiManager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+    if (wifiManager != null) {
+      DhcpInfo dhcpInfo = wifiManager.getDhcpInfo();
+      if (dhcpInfo != null) {
+        int dhcpServerAddress = dhcpInfo.serverAddress;
+        if (dhcpServerAddress != 0) {
+          return intToIp(dhcpServerAddress);
+        }
+      }
+    }
+    return null;
+  }
+
+  private static String intToIp(int ipAddress) {
+    return ((ipAddress & 0xFF) + "." +
+            ((ipAddress >> 8) & 0xFF) + "." +
+            ((ipAddress >> 16) & 0xFF) + "." +
+            (ipAddress >> 24 & 0xFF));
   }
 }
